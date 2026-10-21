@@ -1,0 +1,170 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="768dp"
+    android:height="650dp"
+    android:viewportWidth="768"
+    android:viewportHeight="650">
+
+    <!-- White Background -->
+    <path
+        android:pathData="M0,0h768v650H0z"
+        android:fillColor="#FFFFFF"/>
+
+    <!-- ========== GLOBE ========== -->
+    <path
+        android:pathData="M384,110 A115,115 0 1,1 384,340 A115,115 0 1,1 384,110 Z"
+        android:fillColor="#0A2E60"/>
+
+    <!-- Yellow latitude lines -->
+    <path
+        android:pathData="M269,225 Q384,155 499,225"
+        android:strokeWidth="6"
+        android:strokeColor="#F2A900"
+        android:fillColor="#00000000"/>
+    <path
+        android:pathData="M269,225 Q384,295 499,225"
+        android:strokeWidth="6"
+        android:strokeColor="#F2A900"
+        android:fillColor="#00000000"/>
+    <path
+        android:pathData="M290,160 Q384,125 478,160"
+        android:strokeWidth="5"
+        android:strokeColor="#F2A900"
+        android:fillColor="#00000000"/>
+    <path
+        android:pathData="M290,290 Q384,325 478,290"
+        android:strokeWidth="5"
+        android:strokeColor="#F2A900"
+        android:fillColor="#00000000"/>
+
+    <!-- Yellow longitude lines -->
+    <path
+        android:pathData="M384,110 Q310,225 384,340"
+        android:strokeWidth="6"
+        android:strokeColor="#F2A900"
+        android:fillColor="#00000000"/>
+    <path
+        android:pathData="M384,110 Q458,225 384,340"
+        android:strokeWidth="6"
+        android:strokeColor="#F2A900"
+        android:fillColor="#00000000"/>
+
+    <!-- ========== ORBIT RING ========== -->
+    <path
+        android:pathData="M215,235 C260,130 505,120 545,230 C510,340 250,350 215,235 Z"
+        android:strokeWidth="14"
+        android:strokeColor="#F2A900"
+        android:fillColor="#00000000"
+        android:strokeLineCap="round"/>
+
+    <!-- Red sphere -->
+    <path
+        android:pathData="M214,234 A11,11 0 1,1 214.1,234"
+        android:fillColor="#D32F2F"/>
+
+    <!-- ========== IONIC CAPITAL ========== -->
+    <!-- Abacus -->
+    <path
+        android:pathData="M250,350 h268 v28 h-268 z"
+        android:fillColor="#2C2C2C"/>
+
+    <!-- Left volute -->
+    <path
+        android:pathData="M250,350 C220,350 215,390 250,390"
+        android:strokeWidth="14"
+        android:strokeColor="#2C2C2C"
+        android:fillColor="#00000000"
+        android:strokeLineCap="round"/>
+    <path
+        android:pathData="M250,365 C235,365 235,380 250,380"
+        android:strokeWidth="5"
+        android:strokeColor="#1A1A1A"
+        android:fillColor="#00000000"/>
+
+    <!-- Right volute -->
+    <path
+        android:pathData="M518,350 C548,350 553,390 518,390"
+        android:strokeWidth="14"
+        android:strokeColor="#2C2C2C"
+        android:fillColor="#00000000"
+        android:strokeLineCap="round"/>
+    <path
+        android:pathData="M518,365 C533,365 533,380 518,380"
+        android:strokeWidth="5"
+        android:strokeColor="#1A1A1A"
+        android:fillColor="#00000000"/>
+
+    <!-- Capital middle band -->
+    <path
+        android:pathData="M295,360 h178 v14 h-178 z"
+        android:fillColor="#3A3A3A"/>
+
+    <!-- Vertical grooves on capital -->
+    <path
+        android:pathData="M310,362.5 v9 M330,362.5 v9 M350,362.5 v9 M370,362.5 v9 M390,362.5 v9 M410,362.5 v9 M430,362.5 v9 M450,362.5 v9"
+        android:strokeWidth="4"
+        android:strokeColor="#1A1A1A"
+        android:fillColor="#00000000"/>
+
+    <!-- ========== COLUMN SHAFT ========== -->
+    <path
+        android:pathData="M282.5,390 h203 v115 h-203 z"
+        android:fillColor="#1A1A1A"/>
+
+    <!-- Left highlight -->
+    <path
+        android:pathData="M282.5,390 h9 v115 h-9 z"
+        android:fillColor="#2E2E2E"/>
+
+    <!-- Fluting -->
+    <path
+        android:pathData="M302.5,400 v95 M322.5,400 v95 M342.5,400 v95 M362.5,400 v95 M382.5,400 v95 M402.5,400 v95 M422.5,400 v95 M442.5,400 v95 M462.5,400 v95"
+        android:strokeWidth="7"
+        android:strokeColor="#2E2E2E"
+        android:fillColor="#00000000"/>
+
+    <!-- ========== BASE ========== -->
+    <path
+        android:pathData="M262.5,505 h243 v11 h-243 z"
+        android:fillColor="#3A3A3A"/>
+    <path
+        android:pathData="M262.5,516 h243 v16 h-243 z"
+        android:fillColor="#D32F2F"/>
+    <path
+        android:pathData="M262.5,532 h243 v16 h-243 z"
+        android:fillColor="#F2A900"/>
+    <path
+        android:pathData="M242.5,548 h283 v21 h-283 z"
+        android:fillColor="#1A1A1A"/>
+
+    <!-- Soft shadow -->
+    <path
+        android:pathData="M210,570 h348 v6 h-348 z"
+        android:fillColor="#000000"
+        android:fillAlpha="0.25"/>
+
+    <!-- ========== CLCGI TEXT (scaled) ========== -->
+    <!-- C -->
+    <path
+        android:pathData="M264,575 C224,575 204,595 204,630 C204,665 224,685 264,685 L264,655 C239,655 234,640 234,630 C234,620 239,605 264,605 Z"
+        android:fillColor="#000000"/>
+
+    <!-- L -->
+    <path
+        android:pathData="M279,575 L309,575 L309,655 L349,655 L349,685 L279,685 Z"
+        android:fillColor="#000000"/>
+
+    <!-- C -->
+    <path
+        android:pathData="M424,575 C384,575 364,595 364,630 C364,665 384,685 424,685 L424,655 C399,655 394,640 394,630 C394,620 399,605 424,605 Z"
+        android:fillColor="#000000"/>
+
+    <!-- G -->
+    <path
+        android:pathData="M499,575 C459,575 439,595 439,630 C439,665 459,685 499,685 L519,685 L519,630 L469,630 L469,655 L489,655 C489,645 469,645 469,630 C469,615 479,595 499,595 C509,595 514,600 519,605 L524,585 C514,580 509,575 499,575 Z"
+        android:fillColor="#000000"/>
+
+    <!-- I -->
+    <path
+        android:pathData="M534,575 L564,575 L564,685 L534,685 Z"
+        android:fillColor="#000000"/>
+</vector>

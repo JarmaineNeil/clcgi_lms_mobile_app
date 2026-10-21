@@ -1,0 +1,1032 @@
+// (C) Copyright 2015 Moodle Pty Ltd.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+import { Injectable } from '@angular/core';
+import { CoreFileUploader, CoreFileUploaderStoreFilesResult } from '@features/fileuploader/services/fileuploader';
+import { CoreSites, CoreSitesCommonWSOptions } from '@services/sites';
+import { FileEntry, DirectoryEntry } from '@awesome-cordova-plugins/file/ngx';
+import {
+    AddonModAssignAssign,
+    AddonModAssignSubmission,
+    AddonModAssignParticipant,
+    AddonModAssignSubmissionFeedback,
+    AddonModAssign,
+    AddonModAssignPlugin,
+    AddonModAssignSavePluginData,
+    AddonModAssignFeedbackPluginMultipleMarker,
+    AddonModAssignFeedbackPluginMultipleMarkers,
+} from './assign';
+import { AddonModAssignOffline } from './assign-offline';
+import { CoreObject } from '@static/object';
+import { CoreFile } from '@services/file';
+import { CoreCourseCommonModWSOptions } from '@features/course/services/course';
+import { CoreGroups } from '@services/groups';
+import { AddonModAssignSubmissionDelegate } from './submission-delegate';
+import { AddonModAssignFeedbackDelegate } from './feedback-delegate';
+import { makeSingleton, Translate } from '@singletons';
+import { CoreFormFields } from '@static/form';
+import { CoreFileEntry } from '@services/file-helper';
+import { ADDON_MOD_ASSIGN_COMPONENT_LEGACY, AddonModAssignSubmissionStatusValues } from '../constants';
+import { CorePromiseUtils } from '@static/promise-utils';
+import { CoreUser } from '@features/user/services/user';
+import { CoreWSFile } from '@services/ws';
+
+/**
+ * Service that provides some helper functions for assign.
+ */
+@Injectable({ providedIn: 'root' })
+export class AddonModAssignHelperProvider {
+
+    /**
+     * Calculate the end time (timestamp) for an assign and submission.
+     *
+     * @param assign Assign instance.
+     * @param submission Submission.
+     * @returns End time.
+     */
+    calculateEndTime(assign: AddonModAssignAssign, submission?: AddonModAssignSubmissionFormatted): number {
+        const timeDue = (submission?.timestarted || 0) + (assign.timelimit || 0);
+
+        if (assign.duedate) {
+            return Math.min(timeDue, assign.duedate);
+        } else if (assign.cutoffdate) {
+            return Math.min(timeDue, assign.cutoffdate);
+        }
+
+        return timeDue;
+    }
+
+    /**
+     * Clear plugins temporary data because a submission was cancelled.
+     *
+     * @param assign Assignment.
+     * @param submission Submission to clear the data for.
+     * @param inputData Data entered in the submission form.
+     */
+    clearSubmissionPluginTmpData(
+        assign: AddonModAssignAssign,
+        submission: AddonModAssignSubmission | undefined,
+        inputData: CoreFormFields,
+    ): void {
+        if (!submission) {
+            return;
+        }
+
+        submission.plugins?.forEach((plugin) => {
+            AddonModAssignSubmissionDelegate.clearTmpData(assign, submission, plugin, inputData);
+        });
+    }
+
+    /**
+     * Copy the data from last submitted attempt to the current submission.
+     * Since we don't have any WS for that we'll have to re-submit everything manually.
+     *
+     * @param assign Assignment.
+     * @param previousSubmission Submission to copy.
+     * @returns Promise resolved when done.
+     */
+    async copyPreviousAttempt(assign: AddonModAssignAssign, previousSubmission: AddonModAssignSubmission): Promise<void> {
+        const pluginData: AddonModAssignSavePluginData = {};
+        const promises = previousSubmission.plugins
+            ? previousSubmission.plugins.map((plugin) =>
+                AddonModAssignSubmissionDelegate.copyPluginSubmissionData(assign, plugin, pluginData))
+            : [];
+
+        await Promise.all(promises);
+
+        // We got the plugin data. Now we need to submit it.
+        if (Object.keys(pluginData).length) {
+            // There's something to save.
+            return AddonModAssign.saveSubmissionOnline(assign.id, pluginData);
+        }
+    }
+
+    /**
+     * Create an empty feedback object.
+     *
+     * @returns Feedback.
+     */
+    createEmptyFeedback(): AddonModAssignSubmissionFeedback {
+        return {
+            grade: undefined,
+            gradefordisplay: '',
+            gradeddate: 0,
+        };
+    }
+
+    /**
+     * Create an empty submission object.
+     *
+     * @returns Submission.
+     */
+    createEmptySubmission(): AddonModAssignSubmissionFormatted {
+        return {
+            id: 0,
+            userid: 0,
+            attemptnumber: 0,
+            timecreated: 0,
+            timemodified: 0,
+            status: AddonModAssignSubmissionStatusValues.NEW,
+            groupid: 0,
+        };
+    }
+
+    /**
+     * Delete stored submission files for a plugin. See storeSubmissionFiles.
+     *
+     * @param assignId Assignment ID.
+     * @param folderName Name of the plugin folder. Must be unique (both in submission and feedback plugins).
+     * @param userId User ID. If not defined, site's current user.
+     * @param siteId Site ID. If not defined, current site.
+     * @returns Promise resolved when done.
+     */
+    async deleteStoredSubmissionFiles(assignId: number, folderName: string, userId?: number, siteId?: string): Promise<void> {
+        const folderPath = await AddonModAssignOffline.getSubmissionPluginFolder(assignId, folderName, userId, siteId);
+
+        await CoreFile.removeDir(folderPath);
+    }
+
+    /**
+     * Delete all drafts of the feedback plugin data.
+     *
+     * @param assignId Assignment Id.
+     * @param userId User Id.
+     * @param feedback Feedback data.
+     * @param siteId Site ID. If not defined, current site.
+     * @returns Promise resolved when done.
+     * @deprecated since 5.0. Feedback drafts are not needed if you show form in the grading modal.
+     */
+    async discardFeedbackPluginData(
+        assignId: number,
+        userId: number,
+        feedback: AddonModAssignSubmissionFeedback,
+        siteId?: string,
+    ): Promise<void> {
+
+        const promises = feedback.plugins
+            ? feedback.plugins.map((plugin) =>
+                // eslint-disable-next-line @typescript-eslint/no-deprecated
+                AddonModAssignFeedbackDelegate.discardPluginFeedbackData(assignId, userId, plugin, siteId))
+            : [];
+
+        await Promise.all(promises);
+    }
+
+    /**
+     * Check if a submission has no content.
+     *
+     * @param assign Assignment object.
+     * @param submission Submission to inspect.
+     * @returns Whether the submission is empty.
+     */
+    isSubmissionEmpty(assign: AddonModAssignAssign, submission?: AddonModAssignSubmission): boolean {
+        if (!submission) {
+            return true;
+        }
+
+        const anyNotEmpty = submission.plugins?.some((plugin) =>
+            !AddonModAssignSubmissionDelegate.isPluginEmpty(assign, plugin));
+
+        // If any plugin is not empty, we consider that the submission is not empty either.
+        if (anyNotEmpty) {
+            return false;
+        }
+
+        // If all the plugins were empty (or there were no plugins), we consider the submission to be empty.
+        return true;
+    }
+
+    /**
+     * Check whether the edited submission has no content.
+     *
+     * @param assign Assignment object.
+     * @param submission Submission to inspect.
+     * @param inputData Data entered in the submission form.
+     * @returns Whether the submission is empty.
+     */
+    isSubmissionEmptyForEdit(
+        assign: AddonModAssignAssign,
+        submission: AddonModAssignSubmission,
+        inputData: CoreFormFields,
+    ): boolean {
+        const anyNotEmpty = submission.plugins?.some((plugin) =>
+            !AddonModAssignSubmissionDelegate.isPluginEmptyForEdit(assign, plugin, inputData));
+
+        // If any plugin is not empty, we consider that the submission is not empty either.
+        if (anyNotEmpty) {
+            return false;
+        }
+
+        // If all the plugins were empty (or there were no plugins), we consider the submission to be empty.
+        return true;
+    }
+
+    /**
+     * List the participants for a single assignment, with some summary info about their submissions.
+     *
+     * @param assign Assignment object.
+     * @param groupId Group Id.
+     * @param options Other options.
+     * @returns Promise resolved with the list of participants and summary of submissions.
+     */
+    async getParticipants(
+        assign: AddonModAssignAssign,
+        groupId?: number,
+        options: CoreSitesCommonWSOptions = {},
+    ): Promise<AddonModAssignParticipant[]> {
+
+        groupId = groupId || 0;
+        options.siteId = options.siteId || CoreSites.getCurrentSiteId();
+
+        // Create new options including all existing ones.
+        const modOptions: CoreCourseCommonModWSOptions = { cmId: assign.cmid, ...options };
+
+        const participants = await AddonModAssign.listParticipants(assign.id, groupId, modOptions);
+
+        if (groupId || participants && participants.length > 0) {
+            return participants;
+        }
+
+        // If no participants returned and all groups specified, get participants by groups.
+        const groupsInfo = await CoreGroups.getActivityGroupInfo(assign.cmid, false, undefined, modOptions.siteId);
+
+        const participantsIndexed: { [id: number]: AddonModAssignParticipant } = {};
+
+        const promises = groupsInfo.groups
+            ? groupsInfo.groups.map((userGroup) =>
+                AddonModAssign.listParticipants(assign.id, userGroup.id, modOptions).then((participantsFromList) => {
+                    // Do not get repeated users.
+                    participantsFromList.forEach((participant) => {
+                        participantsIndexed[participant.id] = participant;
+                    });
+
+                    return;
+                }))
+            : [];
+
+        await Promise.all(promises);
+
+        return CoreObject.toArray(participantsIndexed);
+    }
+
+    /**
+     * Get plugin config from assignment config.
+     *
+     * @param assign Assignment object including all config.
+     * @param subtype Subtype name (assignsubmission or assignfeedback)
+     * @param type Name of the subplugin.
+     * @returns Object containing all configurations of the subplugin selected.
+     */
+    getPluginConfig(assign: AddonModAssignAssign, subtype: string, type: string): AddonModAssignPluginConfig {
+        const configs: AddonModAssignPluginConfig = {};
+
+        assign.configs.forEach((config) => {
+            if (config.subtype === subtype && config.plugin === type) {
+                configs[config.name] = config.value;
+            }
+        });
+
+        return configs;
+    }
+
+    /**
+     * Get enabled subplugins.
+     *
+     * @param assign Assignment object including all config.
+     * @param subtype Subtype name (assignsubmission or assignfeedback)
+     * @returns List of enabled plugins for the assign.
+     */
+    getPluginsEnabled(assign: AddonModAssignAssign, subtype: string): AddonModAssignPlugin[] {
+        const enabled: AddonModAssignPlugin[] = [];
+
+        assign.configs.forEach((config) => {
+            if (config.subtype === subtype && config.name === 'enabled' && parseInt(config.value, 10) === 1) {
+                // Format the plugin objects.
+                enabled.push({
+                    type: config.plugin,
+                    name: config.plugin,
+                });
+            }
+        });
+
+        return enabled;
+    }
+
+    /**
+     * Get a list of stored submission files. See storeSubmissionFiles.
+     *
+     * @param assignId Assignment ID.
+     * @param folderName Name of the plugin folder. Must be unique (both in submission and feedback plugins).
+     * @param userId User ID. If not defined, site's current user.
+     * @param siteId Site ID. If not defined, current site.
+     * @returns Promise resolved with the files.
+     */
+    async getStoredSubmissionFiles(
+        assignId: number,
+        folderName: string,
+        userId?: number,
+        siteId?: string,
+    ): Promise<(FileEntry | DirectoryEntry)[]> {
+        const folderPath = await AddonModAssignOffline.getSubmissionPluginFolder(assignId, folderName, userId, siteId);
+
+        return CoreFile.getDirectoryContents(folderPath);
+    }
+
+    /**
+     * Get the size that will be uploaded to perform an attempt copy.
+     *
+     * @param assign Assignment.
+     * @param previousSubmission Submission to copy.
+     * @returns Promise resolved with the size.
+     */
+    async getSubmissionSizeForCopy(assign: AddonModAssignAssign, previousSubmission: AddonModAssignSubmission): Promise<number> {
+        let totalSize = 0;
+
+        const promises = previousSubmission.plugins
+            ? previousSubmission.plugins.map((plugin) =>
+                AddonModAssignSubmissionDelegate.getPluginSizeForCopy(assign, plugin).then((size) => {
+                    totalSize += (size || 0);
+
+                    return;
+                }))
+            : [];
+
+        await Promise.all(promises);
+
+        return totalSize;
+    }
+
+    /**
+     * Get the size that will be uploaded to save a submission.
+     *
+     * @param assign Assignment.
+     * @param submission Submission to check data.
+     * @param inputData Data entered in the submission form.
+     * @returns Promise resolved with the size.
+     */
+    async getSubmissionSizeForEdit(
+        assign: AddonModAssignAssign,
+        submission: AddonModAssignSubmission,
+        inputData: CoreFormFields,
+    ): Promise<number> {
+
+        let totalSize = 0;
+
+        const promises = submission.plugins
+            ? submission.plugins.map((plugin) =>
+                AddonModAssignSubmissionDelegate.getPluginSizeForEdit(assign, submission, plugin, inputData)
+                    .then((size) => {
+                        totalSize += (size || 0);
+
+                        return;
+                    }))
+            : [];
+
+        await Promise.all(promises);
+
+        return totalSize;
+    }
+
+    /**
+     * Get user data for submissions since they only have userid.
+     *
+     * @param assign Assignment object.
+     * @param submissions Submissions to get the data for.
+     * @param groupId Group Id.
+     * @param options Other options.
+     * @returns Promise always resolved. Resolve param is the formatted submissions.
+     */
+    async getSubmissionsUserData(
+        assign: AddonModAssignAssign,
+        submissions: AddonModAssignSubmissionFormatted[] = [],
+        groupId?: number,
+        options: CoreSitesCommonWSOptions = {},
+    ): Promise<AddonModAssignSubmissionFormatted[]> {
+        const participants = await this.getParticipants(assign, groupId, options);
+
+        const blind = !!assign.blindmarking && !assign.revealidentities;
+        const teamsubmission = !!assign.teamsubmission;
+
+        if (teamsubmission) {
+            // On team submission discard user submissions.
+            submissions = submissions.filter((submission) => submission.userid === 0);
+        }
+
+        return participants.map((participant) => {
+            const groupId = participant.groupid ??
+                (participant.groups && participant.groups[0] ? participant.groups[0].id : 0);
+
+            const foundSubmission = submissions.find((submission) => {
+                if (teamsubmission) {
+                    return submission.groupid === groupId;
+                }
+
+                const submitId = submission.userid && submission.userid > 0 ? submission.userid : submission.blindid;
+
+                return participant.id === submitId;
+            });
+
+            let submission: AddonModAssignSubmissionFormatted | undefined;
+            if (!foundSubmission) {
+                // Create submission if none.
+                submission = this.createEmptySubmission();
+                submission.groupid = groupId;
+                submission.status = participant.submitted
+                    ? AddonModAssignSubmissionStatusValues.SUBMITTED
+                    : AddonModAssignSubmissionStatusValues.NEW;
+            } else {
+                submission = Object.assign({}, foundSubmission);
+            }
+
+            submission.submitid = participant.id;
+
+            if (!blind) {
+                submission.userid = participant.id;
+                submission.userfullname = participant.fullname;
+                submission.userprofileimageurl = participant.profileimageurl;
+            } else {
+                submission.blindid = participant.recordid ?? participant.id;
+            }
+
+            submission.manyGroups = !!participant.groups && participant.groups.length > 1;
+            submission.noGroups = !!participant.groups && participant.groups.length === 0;
+            if (participant.groupname) {
+                submission.groupid = participant.groupid ?? 0;
+                submission.groupname = participant.groupname;
+            }
+
+            return submission;
+
+        });
+    }
+
+    /**
+     * Check if the feedback data has changed for a certain submission and assign.
+     *
+     * @param assign Assignment.
+     * @param submission The submission.
+     * @param feedback Feedback data.
+     * @param userId The user ID.
+     * @param inputData Data entered in the feedback form.
+     * @returns Promise resolved with true if data has changed, resolved with false otherwise.
+     */
+    async hasFeedbackDataChanged(
+        assign: AddonModAssignAssign,
+        submission: AddonModAssignSubmission | AddonModAssignSubmissionFormatted | undefined,
+        feedback: AddonModAssignSubmissionFeedback,
+        userId: number,
+        inputData: CoreFormFields,
+    ): Promise<boolean> {
+        if (!submission || !feedback.plugins) {
+            return false;
+        }
+
+        let hasChanged = false;
+
+        const promises = feedback.plugins.map((plugin) =>
+            AddonModAssignFeedbackDelegate.hasPluginDataChanged(assign, submission, plugin, inputData, userId)
+                .then((changed) => {
+                    if (changed) {
+                        hasChanged = true;
+                    }
+
+                    return;
+                }).catch(() => {
+                    // Ignore errors.
+                }));
+
+        await CorePromiseUtils.allPromises(promises);
+
+        return hasChanged;
+    }
+
+    /**
+     * Check if the submission data has changed for a certain submission and assign.
+     *
+     * @param assign Assignment.
+     * @param submission Submission to check data.
+     * @param inputData Data entered in the submission form.
+     * @returns Promise resolved with true if data has changed, resolved with false otherwise.
+     */
+    async hasSubmissionDataChanged(
+        assign: AddonModAssignAssign,
+        submission: AddonModAssignSubmission | undefined,
+        inputData: CoreFormFields,
+    ): Promise<boolean> {
+        if (!submission || !submission.plugins) {
+            return false;
+        }
+
+        let hasChanged = false;
+
+        const promises = submission.plugins.map((plugin) =>
+            AddonModAssignSubmissionDelegate.hasPluginDataChanged(assign, submission, plugin, inputData)
+                .then((changed) => {
+                    if (changed) {
+                        hasChanged = true;
+                    }
+
+                    return;
+                }).catch(() => {
+                    // Ignore errors.
+                }));
+
+        await CorePromiseUtils.allPromises(promises);
+
+        return hasChanged;
+    }
+
+    /**
+     * Prepare and return the plugin data to send for a certain feedback and assign.
+     *
+     * @param assignId Assignment Id.
+     * @param userId User Id.
+     * @param feedback Feedback data.
+     * @param inputData Data entered in the feedback form.
+     * @param siteId Site ID. If not defined, current site.
+     * @returns Promise resolved with plugin data to send to server.
+     */
+    async prepareFeedbackPluginData(
+        assignId: number,
+        userId: number,
+        feedback: AddonModAssignSubmissionFeedback,
+        inputData: CoreFormFields,
+        siteId?: string,
+    ): Promise<AddonModAssignSavePluginData> {
+
+        const pluginData: CoreFormFields = {};
+        const promises = feedback.plugins
+            ? feedback.plugins.map((plugin) =>
+                AddonModAssignFeedbackDelegate.preparePluginFeedbackData(assignId, userId, plugin, pluginData, inputData, siteId))
+            : [];
+
+        await Promise.all(promises);
+
+        return pluginData;
+    }
+
+    /**
+     * Prepare and return the plugin data to send for a certain submission and assign.
+     *
+     * @param assign Assignment.
+     * @param submission Submission to check data.
+     * @param inputData Data entered in the submission form.
+     * @param offline True to prepare the data for an offline submission, false otherwise.
+     * @returns Promise resolved with plugin data to send to server.
+     */
+    async prepareSubmissionPluginData(
+        assign: AddonModAssignAssign,
+        submission: AddonModAssignSubmission | undefined,
+        inputData: CoreFormFields,
+        offline = false,
+    ): Promise<AddonModAssignSavePluginData> {
+
+        if (!submission || !submission.plugins) {
+            return {};
+        }
+
+        const pluginData: AddonModAssignSavePluginData = {};
+        const promises = submission.plugins.map((plugin) =>
+            AddonModAssignSubmissionDelegate.preparePluginSubmissionData(
+                assign,
+                submission,
+                plugin,
+                inputData,
+                pluginData,
+                offline,
+            ));
+
+        await Promise.all(promises);
+
+        return pluginData;
+    }
+
+    /**
+     * Check if feedback needs to be fetched unfiltered to edit it.
+     *
+     * @param assign Assignment.
+     * @param submitId The submission ID.
+     * @param feedback Feedback to check.
+     * @returns Whether the app should fetch unfiltered feedback to edit it.
+     */
+    async shouldFetchUnfilteredFeedbackToEdit(
+        assign: AddonModAssignAssign,
+        submitId: number,
+        feedback?: AddonModAssignSubmissionFeedback,
+    ): Promise<boolean> {
+        if (!feedback) {
+            return false;
+        }
+
+        if (await CorePromiseUtils.promiseWorks(AddonModAssignOffline.getSubmissionGrade(assign.id, submitId))) {
+            // There is offline feedback, no need to fetch the feedback from the server.
+            return false;
+        }
+
+        // There is online feedback, check if plugins can contain filters.
+        const canPluginsContainFilters = await Promise.all((feedback.plugins ?? []).map(
+            plugin => AddonModAssignFeedbackDelegate.canPluginContainFiltersWhenEditing(assign, submitId, feedback, plugin),
+        ));
+
+        return canPluginsContainFilters.some(canContainFilters => canContainFilters);
+    }
+
+    /**
+     * Check if submission needs to be fetched unfiltered to edit it.
+     *
+     * @param assign Assignment.
+     * @param submission Submission.
+     * @returns Whether the app should fetch unfiltered submission to edit it.
+     */
+    async shouldFetchUnfilteredSubmissionToEdit(
+        assign: AddonModAssignAssign,
+        submission?: AddonModAssignSubmission,
+    ): Promise<boolean> {
+        if (!submission) {
+            return false;
+        }
+
+        if (AddonModAssign.isNewOrReopenedSubmission(submission.status)) {
+            // It's a new submission, no submission data to fetch.
+            return false;
+        }
+
+        if (await CorePromiseUtils.promiseWorks(AddonModAssignOffline.getSubmission(assign.id, submission.userid))) {
+            // Submission was saved or deleted offline, no need to fetch the submission from the server.
+            return false;
+        }
+
+        // There is an online submission, check if plugins can contain filters.
+        const canPluginsContainFilters = await Promise.all((submission.plugins ?? []).map(
+            plugin => AddonModAssignSubmissionDelegate.canPluginContainFiltersWhenEditing(assign, submission, plugin),
+        ));
+
+        return canPluginsContainFilters.some(canContainFilters => canContainFilters);
+    }
+
+    /**
+     * Given a list of files (either online files or local files), store the local files in a local folder
+     * to be submitted later.
+     *
+     * @param assignId Assignment ID.
+     * @param folderName Name of the plugin folder. Must be unique (both in submission and feedback plugins).
+     * @param files List of files.
+     * @param userId User ID. If not defined, site's current user.
+     * @param siteId Site ID. If not defined, current site.
+     * @returns Promise resolved if success, rejected otherwise.
+     */
+    async storeSubmissionFiles(
+        assignId: number,
+        folderName: string,
+        files: CoreFileEntry[],
+        userId?: number,
+        siteId?: string,
+    ): Promise<CoreFileUploaderStoreFilesResult> {
+        // Get the folder where to store the files.
+        const folderPath = await AddonModAssignOffline.getSubmissionPluginFolder(assignId, folderName, userId, siteId);
+
+        return CoreFileUploader.storeFilesToUpload(folderPath, files);
+    }
+
+    /**
+     * Upload a file to a draft area. If the file is an online file it will be downloaded and then re-uploaded.
+     *
+     * @param assignId Assignment ID.
+     * @param file Online file or local FileEntry.
+     * @param itemId Draft ID to use. Undefined or 0 to create a new draft ID.
+     * @param siteId Site ID. If not defined, current site.
+     * @returns Promise resolved with the itemId.
+     */
+    uploadFile(assignId: number, file: CoreFileEntry, itemId?: number, siteId?: string): Promise<number> {
+        return CoreFileUploader.uploadOrReuploadFile(file, itemId, ADDON_MOD_ASSIGN_COMPONENT_LEGACY, assignId, siteId);
+    }
+
+    /**
+     * Given a list of files (either online files or local files), upload them to a draft area and return the draft ID.
+     * Online files will be downloaded and then re-uploaded.
+     * If there are no files to upload it will return a fake draft ID (1).
+     *
+     * @param assignId Assignment ID.
+     * @param files List of files.
+     * @param siteId Site ID. If not defined, current site.
+     * @returns Promise resolved with the itemId.
+     */
+    uploadFiles(assignId: number, files: CoreFileEntry[], siteId?: string): Promise<number> {
+        return CoreFileUploader.uploadOrReuploadFiles(files, ADDON_MOD_ASSIGN_COMPONENT_LEGACY, assignId, siteId);
+    }
+
+    /**
+     * Upload or store some files, depending if the user is offline or not.
+     *
+     * @param assignId Assignment ID.
+     * @param folderName Name of the plugin folder. Must be unique (both in submission and feedback plugins).
+     * @param files List of files.
+     * @param offline True if files sould be stored for offline, false to upload them.
+     * @param userId User ID. If not defined, site's current user.
+     * @param siteId Site ID. If not defined, current site.
+     * @returns Promise resolved when done.
+     */
+    async uploadOrStoreFiles(
+        assignId: number,
+        folderName: string,
+        files: CoreFileEntry[],
+        offline: true,
+        userId?: number,
+        siteId?: string,
+    ): Promise<CoreFileUploaderStoreFilesResult>;
+    async uploadOrStoreFiles(
+        assignId: number,
+        folderName: string,
+        files: CoreFileEntry[],
+        offline: false,
+        userId?: number,
+        siteId?: string,
+    ): Promise<number>;
+    async uploadOrStoreFiles(
+        assignId: number,
+        folderName: string,
+        files: CoreFileEntry[],
+        offline: boolean,
+        userId?: number,
+        siteId?: string,
+    ): Promise<number | CoreFileUploaderStoreFilesResult>;
+    async uploadOrStoreFiles(
+        assignId: number,
+        folderName: string,
+        files: CoreFileEntry[],
+        offline: boolean,
+        userId?: number,
+        siteId?: string,
+    ): Promise<number | CoreFileUploaderStoreFilesResult> {
+
+        if (offline) {
+            return this.storeSubmissionFiles(assignId, folderName, files, userId, siteId);
+        }
+
+        return this.uploadFiles(assignId, files, siteId);
+    }
+
+    /**
+     * Merge feedback plugins with multiple markers.
+     *
+     * @param feedback Feedback object containing plugins and marker feedback.
+     * @returns List of feedback plugins with multiple markers merged.
+     */
+    mergeFeedbackPluginsWithMultipleMarkers(
+        feedback: AddonModAssignSubmissionFeedback,
+    ): AddonModAssignFeedbackPluginMultipleMarkers[] {
+
+        const plugins: AddonModAssignFeedbackPluginMultipleMarkers [] = feedback.plugins || [];
+        const markerFeedback = feedback.markerfeedback || [];
+        if (markerFeedback.length > 0 && feedback.plugins?.length) {
+            feedback.plugins.forEach((plugin: AddonModAssignFeedbackPluginMultipleMarkers) => {
+                const multipleMarkers: AddonModAssignFeedbackPluginMultipleMarker[] = [];
+                markerFeedback.forEach((mf) => {
+                    const multipleMarker = mf.plugins?.find((mfPlugin) => mfPlugin.type === plugin.type);
+                    if (multipleMarker) {
+                        multipleMarkers.push({
+                            markerid: mf.markerid,
+                            position: mf.position,
+                            workflowstate: mf.workflowstate,
+                            ...multipleMarker,
+                        });
+                    }
+                });
+                plugin.multiplemarkers = multipleMarkers;
+            });
+        }
+
+        return plugins;
+    }
+
+    /**
+     * Get text of a submission plugin.
+     *
+     * @param pluginInfo Plugin info.
+     * @param options Options for retrieving the plugin text.
+     * @param options.keepUrls True if it should keep original URLs, false if they should be replaced.
+     * @param options.translations Object containing translation keys for the marker, hidden marker, and overall comments.
+     * @param options.translations.markerTranslationKey Translation key for the title of the marker comment.
+     * @param options.translations.hiddenMarkerTranslationKey Translation key for the title of the hidden marker comment.
+     * @param options.translations.overallTranslationKey Translation key for the title of the overall comment.
+     * @returns Submission text.
+     */
+    protected async getPluginTextWithMarker(
+        pluginInfo: AddonModAssignFeedbackPluginMultipleMarker | AddonModAssignPlugin,
+        options: {
+            keepUrls?: boolean;
+            translations?: {
+                markerTranslationKey?: string;
+                hiddenMarkerTranslationKey?: string;
+                overallTranslationKey?: string;
+            };
+        } = {},
+    ): Promise<string> {
+        const { keepUrls, translations } = options;
+        const text = AddonModAssign.getSubmissionPluginText(pluginInfo, keepUrls);
+        if (!text) {
+            return '';
+        }
+
+        if (translations) {
+            let title: string | undefined;
+            if ('markerid' in pluginInfo) {
+                if (pluginInfo.markerid > 0 && translations.markerTranslationKey) {
+                    const user = await CorePromiseUtils.ignoreErrors(CoreUser.getProfile(pluginInfo.markerid, undefined, true));
+                    const graderName = user?.fullname ?? '';
+
+                    if (graderName && translations.markerTranslationKey) {
+                        title = Translate.instant(translations.markerTranslationKey, { $a: graderName });
+                    }
+                }
+
+                if (!title && translations.hiddenMarkerTranslationKey) {
+                    title = Translate.instant(translations.hiddenMarkerTranslationKey, { $a: pluginInfo.position });
+                }
+            } else if (translations.overallTranslationKey) {
+                title = Translate.instant(translations.overallTranslationKey);
+            }
+
+            if (title) {
+                return `<h2 style="font: var(--mdl-typography-heading5-font);">${title}</h2><div>${text}</div>`;
+            }
+        }
+
+        return `<div>${text}</div>`;
+    }
+
+    /**
+     * Get text of a submission plugin.
+     *
+     * @param pluginInfo Plugin info.
+     * @param options Object containing options for retrieving the plugin text.
+     * @param options.markerFeedbacks List of marker feedbacks for the plugin.
+     * @param options.keepUrls True if it should keep original URLs, false if they should be replaced.
+     * @param options.translations Object containing translation keys for the marker, hidden marker, and overall comments.
+     * @param options.translations.markerTranslationKey Translation key for the title of the marker comment.
+     * @param options.translations.hiddenMarkerTranslationKey Translation key for the title of the hidden marker comment.
+     * @param options.translations.overallTranslationKey Translation key for the title of the overall comment.
+     * @returns Submission text.
+     */
+    async getPluginExpandedText(
+        pluginInfo: AddonModAssignPlugin,
+        options: {
+            markerFeedbacks?: AddonModAssignFeedbackPluginMultipleMarker[];
+            keepUrls?: boolean;
+            translations?: {
+                markerTranslationKey?: string;
+                hiddenMarkerTranslationKey?: string;
+                overallTranslationKey?: string;
+            };
+        } = {},
+    ): Promise<string> {
+        const { markerFeedbacks, keepUrls, translations } = options;
+
+        if (!markerFeedbacks || markerFeedbacks.length === 0) {
+            return AddonModAssign.getSubmissionPluginText(
+                pluginInfo,
+                keepUrls,
+            );
+        }
+
+        const expandedTexts = await Promise.all(markerFeedbacks?.map(async (markerFeedback) =>
+            await this.getPluginTextWithMarker(
+                markerFeedback,
+                { keepUrls, translations },
+            )));
+
+        const overallText = await this.getPluginTextWithMarker(
+            pluginInfo,
+            { keepUrls, translations },
+        );
+        expandedTexts.push(overallText);
+
+        return expandedTexts.join('');
+    }
+
+    /**
+     * Get attachments of a plugin with marker titles.
+     *
+     * @param pluginInfo Plugin information.
+     * @param markerFeedbacks Marker feedbacks.
+     * @param translations Translations for marker titles.
+     * @param translations.markerTranslationKey Translation key for the title of the marker.
+     * @param translations.hiddenMarkerTranslationKey Translation key for the title of the hidden marker.
+     * @param translations.overallTranslationKey Translation key for the title of the overall comment.
+     * @param filterFileAreas List of file areas to include. If not defined, all file areas are included.
+     * @param filterFileAreas.overallFileAreas List of overall file areas to include.
+     * @param filterFileAreas.markerFileAreas List of marker file areas to include.
+     * @returns List of attachments with their titles.
+     */
+    async getPluginAttachmentsWithMarkerTitles(
+        pluginInfo: AddonModAssignPlugin,
+        markerFeedbacks?: AddonModAssignFeedbackPluginMultipleMarker[],
+        translations: {
+            markerTranslationKey?: string;
+            hiddenMarkerTranslationKey?: string;
+            overallTranslationKey?: string;
+        } = {},
+        filterFileAreas: {
+            overallFileAreas?: string[];
+            markerFileAreas?: string[];
+        } = {},
+    ): Promise<AddonModAssignMarkerFiles[]> {
+        const overallFiles = AddonModAssign.getSubmissionPluginAttachments(pluginInfo, filterFileAreas.overallFileAreas);
+        const markerFiles: AddonModAssignMarkerFiles[] = [];
+        if (markerFeedbacks && markerFeedbacks.length > 0) {
+            const markerAttachments = await Promise.all(markerFeedbacks.map(async (markerFeedback) => {
+                let title: string | undefined;
+
+                const files = AddonModAssign.getSubmissionPluginAttachments(markerFeedback, filterFileAreas.markerFileAreas);
+                if (files.length === 0) {
+                    return;
+                }
+
+                if (markerFeedback.markerid > 0) {
+                    const user = await CorePromiseUtils.ignoreErrors(CoreUser.getProfile(markerFeedback.markerid, undefined, true));
+                    const graderName = user?.fullname;
+
+                    if (graderName && translations.markerTranslationKey) {
+                        title = Translate.instant(translations.markerTranslationKey, { $a: graderName });
+                    }
+                }
+
+                if (!title && translations.hiddenMarkerTranslationKey) {
+                    title = Translate.instant(translations.hiddenMarkerTranslationKey, { $a: markerFeedback.position });
+                }
+
+                return { title, files, position: markerFeedback.position };
+            }));
+            markerFiles.push(...markerAttachments.filter((attachment) => attachment !== undefined));
+
+            if (overallFiles.length > 0) {
+                const maxPosition = Math.max(...markerFiles.map(markerFeedback => markerFeedback.position));
+
+                const title = translations.overallTranslationKey
+                    ? Translate.instant(translations.overallTranslationKey)
+                    : undefined;
+                markerFiles.push({ title, files: overallFiles, position: maxPosition + 1 });
+            }
+
+            return markerFiles;
+        }
+
+        // No multiple markers.
+        return [{ files: overallFiles, position: 0 }];
+    }
+
+    /**
+     * Get attachments of a submission plugin.
+     *
+     * @param submissionPlugin Submission plugin.
+     * @param filterFileAreas List of file areas to include. If not defined, all file areas are included.
+     * @returns Submission plugin attachments.
+     */
+    getSubmissionPluginAttachmentsWithMultipleMarkers(
+        submissionPlugin: AddonModAssignFeedbackPluginMultipleMarkers,
+        filterFileAreas?: string[],
+    ): CoreWSFile[] {
+        const files = AddonModAssign.getSubmissionPluginAttachments(submissionPlugin, filterFileAreas);
+
+        submissionPlugin.multiplemarkers?.forEach((marker) => {
+            const markerFiles = AddonModAssign.getSubmissionPluginAttachments(marker, filterFileAreas);
+
+            files.push(...markerFiles);
+        });
+
+        return files;
+    }
+
+}
+export const AddonModAssignHelper = makeSingleton(AddonModAssignHelperProvider);
+
+/**
+ * Assign submission with some calculated data.
+ */
+export type AddonModAssignSubmissionFormatted = AddonModAssignSubmission & {
+    blindid?: number; // Calculated in the app. Blindid of the user that did the submission.
+    submitid?: number; // Calculated in the app. Userid or blindid of the user that did the submission.
+    userfullname?: string; // Calculated in the app. Full name of the user that did the submission.
+    userprofileimageurl?: string; // Calculated in the app. Avatar of the user that did the submission.
+    manyGroups?: boolean; // Calculated in the app. Whether the user belongs to more than 1 group.
+    noGroups?: boolean; // Calculated in the app. Whether the user doesn't belong to any group.
+    groupname?: string; // Calculated in the app. Name of the group the submission belongs to.
+};
+
+/**
+ * Assignment plugin config.
+ */
+export type AddonModAssignPluginConfig = { [name: string]: string };
+
+export type AddonModAssignMarkerFiles = { title?: string; files: CoreWSFile[]; position: number };

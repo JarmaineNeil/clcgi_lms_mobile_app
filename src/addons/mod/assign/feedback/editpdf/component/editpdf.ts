@@ -1,0 +1,59 @@
+// (C) Copyright 2015 Moodle Pty Ltd.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+import { AddonModAssignFeedbackPluginBaseComponent } from '@addons/mod/assign/classes/base-feedback-plugin-component';
+import { ADDON_MOD_ASSIGN_COMPONENT_LEGACY } from '@addons/mod/assign/constants';
+import { Component, OnInit } from '@angular/core';
+import { CoreSharedModule } from '@/core/shared.module';
+import { AddonModAssignHelper, AddonModAssignMarkerFiles } from '@addons/mod/assign/services/assign-helper';
+
+/**
+ * Component to render a edit pdf feedback plugin.
+ */
+@Component({
+    selector: 'addon-mod-assign-feedback-edit-pdf',
+    templateUrl: 'addon-mod-assign-feedback-editpdf.html',
+    imports: [
+        CoreSharedModule,
+    ],
+})
+export class AddonModAssignFeedbackEditPdfComponent extends AddonModAssignFeedbackPluginBaseComponent implements OnInit {
+
+    component = ADDON_MOD_ASSIGN_COMPONENT_LEGACY;
+    markerFiles: AddonModAssignMarkerFiles[] = [];
+
+    /**
+     * @inheritdoc
+     */
+    async ngOnInit(): Promise<void> {
+        if (!this.plugin) {
+            return;
+        }
+
+        this.markerFiles = await AddonModAssignHelper.getPluginAttachmentsWithMarkerTitles(
+            this.plugin,
+            this.markerFeedbacks(),
+            {
+                markerTranslationKey: 'addon.mod_assign_feedback_editpdf.markerfeedback',
+                hiddenMarkerTranslationKey: 'addon.mod_assign_feedback_editpdf.markernumberfeedback',
+                overallTranslationKey: 'addon.mod_assign_feedback_editpdf.overallfeedback',
+            },
+            {
+                overallFileAreas: ['download'],
+                markerFileAreas: ['download_marker'],
+            },
+        );
+    }
+
+}

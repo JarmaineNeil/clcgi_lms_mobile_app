@@ -1,0 +1,43 @@
+/*
+ * App CUSTOM theme SCSS
+ * ----------------------------------------------------------------------------
+ * Place here custom styles.
+ */
+
+/*
+ * Light Theme
+ * -------------------------------------------
+ */
+:root {
+    // Login screen background (default is white).
+    --core-login-background: var(--white);
+}
+
+/*
+ * Dark Theme
+ * -------------------------------------------
+ */
+:root.dark {
+
+}
+
+/*
+ * Login screen customizations
+ * -------------------------------------------
+ */
+// Bigger logo on the login screen.
+core-site-logo {
+    --core-site-logo-max-height: 120px;
+}
+
+// Rounded, bolder login button.
+ion-button.core-login-login-button {
+    --border-radius: 12px;
+    font-weight: 600;
+    text-transform: none;
+}
+
+// Rounded input fields on the login form.
+.core-login-form ion-item {
+    --border-radius: 8px;
+}

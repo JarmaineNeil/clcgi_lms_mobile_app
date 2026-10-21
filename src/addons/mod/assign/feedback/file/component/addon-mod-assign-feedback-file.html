@@ -1,0 +1,15 @@
+@if (markerFiles && markerFiles.length) {
+    <!-- Read only. -->
+    <ion-item class="ion-text-wrap">
+        <ion-label>
+            <p class="item-heading">{{ plugin.name }}</p>
+            @for (markerFile of markerFiles; track markerFile.position) {
+                @if (markerFile.title) {
+                    <p>{{ markerFile.title }}</p>
+                }
+                <core-file *ngFor="let file of markerFile.files" [file]="file" [component]="component" [componentId]="assign.cmid"
+                    [alwaysDownload]="true" />
+            }
+        </ion-label>
+    </ion-item>
+}

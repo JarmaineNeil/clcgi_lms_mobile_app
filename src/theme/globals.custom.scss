@@ -1,0 +1,9 @@
+/*
+ * App Custom App variables SCSS
+ * ----------------------------------------------------------------------------
+ * Place here all custom app variables.
+ * This file is imported BEFORE globals.variables, so these override its defaults.
+ */
+
+// CLCG brand color. CHANGE THIS to your real brand hex; it drives buttons, links, toolbars, etc.
+$brand-color: #0170ff;
