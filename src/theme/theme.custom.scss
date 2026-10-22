@@ -1,43 +1,106 @@
 /*
- * App CUSTOM theme SCSS
+ * App CUSTOM theme SCSS: CLCGI branding
  * ----------------------------------------------------------------------------
- * Place here custom styles.
+ * Imported after the light/dark themes, so rules here win over their defaults.
+ * Only CSS variables and a few simple rules are used on purpose.
  */
 
 /*
- * Light Theme
+ * Light theme
  * -------------------------------------------
  */
 :root {
-    // Login screen background (default is white).
-    --core-login-background: var(--white);
+    // Brand palette (sampled from the logo).
+    --clcgi-navy: #123463;
+    --clcgi-navy-deep: #0b2347;
+    --clcgi-gold: #f7bc22;
+    --clcgi-red: #d71118;
+
+    // Header: keeps the white bar (so Android status bar icons stay readable), with navy text
+    // and a gold line underneath.
+    --core-header-toolbar-background: #ffffff;
+    --core-header-toolbar-color: var(--clcgi-navy);
+    --core-header-buttons-color: var(--clcgi-navy);
+    --core-header-toolbar-border-color: var(--clcgi-gold);
+    --core-header-toolbar-border-width: 3px;
+
+    // Bottom tab bar: navy selected tab, gold indicator, red badge.
+    --core-bottom-tabs-color-selected: var(--clcgi-navy);
+    --core-bottom-tabs-border-color-active: var(--clcgi-gold);
+    --core-bottom-tabs-badge-color: var(--clcgi-red);
+    --core-bottom-tabs-badge-text-color: #ffffff;
+
+    // In-page tabs, progress bars, spinners, selected items and links.
+    --core-tab-color-active: var(--clcgi-navy);
+    --core-tab-border-color-active: var(--clcgi-gold);
+    --core-progressbar-color: var(--clcgi-gold);
+    --core-loading-spinner: var(--clcgi-navy);
+    --selected-item-color: var(--clcgi-navy);
+    --core-link-color: #1c5aa6;
+
+    // Login screen.
+    --core-login-background: #ffffff;
 }
 
 /*
- * Dark Theme
+ * Dark theme
  * -------------------------------------------
  */
 :root.dark {
+    --core-header-toolbar-color: #ffffff;
+    --core-header-buttons-color: #ffffff;
+    --core-header-toolbar-border-color: var(--clcgi-gold);
 
+    --core-bottom-tabs-color-selected: var(--clcgi-gold);
+    --core-tab-color-active: var(--clcgi-gold);
+    --core-loading-spinner: var(--clcgi-gold);
+    --selected-item-color: var(--clcgi-gold);
+    --core-link-color: #8db7f5;
 }
 
 /*
- * Login screen customizations
+ * Shape and typography
  * -------------------------------------------
  */
-// Bigger logo on the login screen.
-core-site-logo {
-    --core-site-logo-max-height: 120px;
-}
-
-// Rounded, bolder login button.
-ion-button.core-login-login-button {
+// Rounded, bolder buttons (not the transparent or outline ones, and not those inside headers).
+ion-button:not([fill="clear"]):not([fill="outline"]) {
     --border-radius: 12px;
     font-weight: 600;
     text-transform: none;
 }
 
-// Rounded input fields on the login form.
-.core-login-form ion-item {
-    --border-radius: 8px;
+// Softer card shadow, tinted with the brand navy.
+ion-card {
+    box-shadow: 0 2px 10px rgba(18, 52, 99, 0.12);
 }
+
+/*
+ * Login screen
+ * -------------------------------------------
+ */
+// Bigger logo (!important is needed because the login page sets its own value).
+.core-login-info-box core-site-logo {
+    --core-site-logo-max-height: 150px !important;
+}
+
+// Taller, bolder login button.
+ion-button.core-login-login-button {
+    --padding-top: 14px;
+    --padding-bottom: 14px;
+    font-size: 16px;
+    letter-spacing: 0.2px;
+}
+
+/*
+ * OPTIONAL: navy header like a classic branded app bar.
+ * Uncomment to try it. Check the Android status bar (clock and battery icons) is still
+ * readable; if not, keep the white header above.
+ * -------------------------------------------
+ */
+/*
+:root {
+    --core-header-toolbar-background: var(--clcgi-navy);
+    --core-header-toolbar-color: #ffffff;
+    --core-header-buttons-color: #ffffff;
+}
+*/

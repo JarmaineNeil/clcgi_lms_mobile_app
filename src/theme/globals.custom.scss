@@ -1,9 +1,14 @@
 /*
  * App Custom App variables SCSS
  * ----------------------------------------------------------------------------
- * Place here all custom app variables.
- * This file is imported BEFORE globals.variables, so these override its defaults.
+ * Imported BEFORE globals.variables, so these override its defaults.
+ *
+ * CLCGI brand colors (sampled from the logo):
+ *   navy  #123463   gold  #F7BC22   red  #D71118
  */
 
-// CLCG brand color. CHANGE THIS to your real brand hex; it drives buttons, links, toolbars, etc.
-$brand-color: #0170ff;
+// Primary color in the light theme: CLCGI navy (buttons, links, icons, highlights).
+$brand-color: #123463;
+
+// Primary color in the dark theme: navy is too dark on a dark background, so use the logo gold.
+$primary-dark: #f7bc22;
